@@ -29,6 +29,35 @@ npm run db:seed               # load sample shipments
 npm run dev                   # http://localhost:3000
 ```
 
+## Real data from the Skydropx sandbox
+
+Instead of sample data, the stats can come from the shipments of a Skydropx sandbox account. A sync script reads them through the Skydropx API (OAuth client credentials) and upserts them into `shipments`.
+
+1. Add the sandbox credentials to `.env` (`SKYDROPX_BASE_URL`, `SKYDROPX_CLIENT_ID`, `SKYDROPX_CLIENT_SECRET`).
+2. Check the response shape once, without touching the database:
+   ```bash
+   npm run skydropx:sync -- --inspect
+   ```
+3. Sync, removing the sample rows so only real data remains:
+   ```bash
+   npm run skydropx:sync -- --clear-sample
+   ```
+
+Re-running the sync is safe: shipments are matched by their Skydropx id, so they are updated instead of duplicated.
+
+The shipment list reports the **label lifecycle** (`workflow_status`), not delivery tracking, so for synced data the stats measure whether each carrier managed to generate the label. Each row stores what actually happened:
+
+| Skydropx field and value                                     | Stored as       | Counted as                    |
+| ------------------------------------------------------------ | --------------- | ----------------------------- |
+| `workflow_status: success`                                   | `label_created` | success                       |
+| `workflow_status: error`                                     | `label_failed`  | failure                       |
+| `workflow_status: cancelled`                                 | `cancelled`     | shown apart, not in the rate (cancelled by the user) |
+| `workflow_status: in_progress`, `in_creation`                | `in_transit`    | not counted yet               |
+| `tracking_status: delivered` (when present)                  | `delivered`     | success                       |
+| `tracking_status: failed`, `returned`, `cancelled`, `exception` | `failed`     | failure                       |
+
+Delivery tracking wins over the label status when both are present. Days are the real delivery time when there is one, otherwise the carrier's `estimated_delivery_days`.
+
 ## Endpoints
 
 ### `GET /stats/carriers`
@@ -52,10 +81,11 @@ Returns carriers sorted by `performance_score`, best first.
 
 | Field               | Description                                                            |
 | ------------------- | ---------------------------------------------------------------------- |
-| `success_rate`      | Delivered / (delivered + failed). In-transit shipments are excluded.    |
-| `avg_days`          | Average days from shipping to delivery, `null` if nothing was delivered |
+| `success_rate`      | Successes / (successes + failures). In-transit and cancelled shipments are excluded. |
+| `avg_days`          | Average delivery days (real, or estimated for labels), `null` if there are none |
+| `cancelled`         | Shipments cancelled by the user, shown for context                       |
 | `performance_score` | `success_rate × 0.7 + speed × 0.3`, where speed is `1 / avg_days` capped at 1 |
-| `status`            | `excellent` (≥ 95%), `good` (≥ 85%), `warning` (≥ 70%), `bad`, or `unknown` (no data) |
+| `status`            | `excellent` (≥ 95%), `good` (≥ 85%), `warning` (≥ 70%), `bad`, or `unknown` (no finished shipments) |
 
 ### `GET /health`
 
@@ -72,6 +102,7 @@ Returns `{ "status": "ok" }`.
 | `npm start`          | Run the compiled server                      |
 | `npm run db:migrate` | Apply pending SQL migrations                 |
 | `npm run db:seed`    | Replace all shipments with sample data       |
+| `npm run skydropx:sync` | Import shipments from the Skydropx sandbox |
 
 ## Project structure
 
