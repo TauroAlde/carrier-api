@@ -10,7 +10,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "skydropx:sync": "tsx src/skydropx/sync.ts"
   },
   "license": "ISC",
   "dependencies": {

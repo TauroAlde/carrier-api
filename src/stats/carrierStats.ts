@@ -5,10 +5,14 @@
 export type CarrierStatus = 'excellent' | 'good' | 'warning' | 'bad' | 'unknown'
 
 // Raw aggregate per carrier, as returned by the database query.
+// `deliveries` / `failures` are successes and failures of the carrier: a delivery
+// or a generated label, and a failed delivery or a failed label (see the repository).
 export type CarrierTotals = {
   carrier: string
   deliveries: number
   failures: number
+  // Cancelled by the user: shown for context, never part of the success rate.
+  cancelled: number
   avgDays: number | null
 }
 
@@ -20,6 +24,7 @@ export type CarrierStat = {
   total_shipments: number
   deliveries: number
   failures: number
+  cancelled: number
   performance_score: number
   status: CarrierStatus
 }
@@ -36,8 +41,10 @@ export function performanceScore(successRate: number, avgDays: number | null): n
   return round2(successRate * 0.7 + speed * 0.3)
 }
 
-export function statusLabel(successRate: number): CarrierStatus {
-  if (successRate === 0) return 'unknown'
+// "unknown" means no finished shipments, not a 0% rate: in the Rails version a
+// carrier that failed every shipment was labelled "unknown" instead of "bad".
+export function statusLabel(successRate: number, finished: number): CarrierStatus {
+  if (finished === 0) return 'unknown'
   if (successRate >= 0.95) return 'excellent'
   if (successRate >= 0.85) return 'good'
   if (successRate >= 0.7) return 'warning'
@@ -45,7 +52,8 @@ export function statusLabel(successRate: number): CarrierStatus {
 }
 
 export function buildCarrierStat(totals: CarrierTotals): CarrierStat {
-  // In-transit shipments don't count yet: they haven't succeeded or failed.
+  // In-transit and cancelled shipments don't count: they haven't succeeded or
+  // failed because of the carrier.
   const total = totals.deliveries + totals.failures
   const successRate = total === 0 ? 0 : totals.deliveries / total
 
@@ -56,9 +64,10 @@ export function buildCarrierStat(totals: CarrierTotals): CarrierStat {
     total_shipments: total,
     deliveries: totals.deliveries,
     failures: totals.failures,
+    cancelled: totals.cancelled,
     // Use the unrounded rate so the score isn't affected by display rounding.
     performance_score: performanceScore(successRate, totals.avgDays),
-    status: statusLabel(successRate),
+    status: statusLabel(successRate, total),
   }
 }
 

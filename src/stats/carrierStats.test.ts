@@ -6,9 +6,16 @@ describe('statusLabel', () => {
     [0.85, 'good'],
     [0.7, 'warning'],
     [0.69, 'bad'],
-    [0, 'unknown'],
   ])('labels a %p success rate as %p', (rate, label) => {
-    expect(statusLabel(rate)).toBe(label)
+    expect(statusLabel(rate, 10)).toBe(label)
+  })
+
+  it('is unknown only when there are no finished shipments', () => {
+    expect(statusLabel(0, 0)).toBe('unknown')
+  })
+
+  it('labels a carrier that failed every shipment as bad, not unknown', () => {
+    expect(statusLabel(0, 2)).toBe('bad')
   })
 })
 
@@ -29,8 +36,8 @@ describe('performanceScore', () => {
 })
 
 describe('buildCarrierStat', () => {
-  it('ignores in-transit shipments when computing the success rate', () => {
-    const stat = buildCarrierStat({ carrier: 'dhl', deliveries: 9, failures: 1, avgDays: 2.345 })
+  it('ignores in-transit and cancelled shipments when computing the success rate', () => {
+    const stat = buildCarrierStat({ carrier: 'dhl', deliveries: 9, failures: 1, cancelled: 3, avgDays: 2.345 })
 
     expect(stat).toEqual({
       carrier: 'dhl',
@@ -39,13 +46,14 @@ describe('buildCarrierStat', () => {
       total_shipments: 10,
       deliveries: 9,
       failures: 1,
+      cancelled: 3,
       performance_score: 0.76,
       status: 'good',
     })
   })
 
   it('handles a carrier with no finished shipments without dividing by zero', () => {
-    const stat = buildCarrierStat({ carrier: 'new', deliveries: 0, failures: 0, avgDays: null })
+    const stat = buildCarrierStat({ carrier: 'new', deliveries: 0, failures: 0, cancelled: 4, avgDays: null })
 
     expect(stat).toMatchObject({ success_rate: 0, total_shipments: 0, status: 'unknown' })
   })
@@ -54,8 +62,8 @@ describe('buildCarrierStat', () => {
 describe('rankCarriers', () => {
   it('sorts carriers by performance score, best first', () => {
     const ranked = rankCarriers([
-      { carrier: 'slow', deliveries: 5, failures: 5, avgDays: 6 },
-      { carrier: 'fast', deliveries: 10, failures: 0, avgDays: 1 },
+      { carrier: 'slow', deliveries: 5, failures: 5, cancelled: 0, avgDays: 6 },
+      { carrier: 'fast', deliveries: 10, failures: 0, cancelled: 0, avgDays: 1 },
     ])
 
     expect(ranked.map((c) => c.carrier)).toEqual(['fast', 'slow'])

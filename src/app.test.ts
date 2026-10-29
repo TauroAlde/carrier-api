@@ -10,8 +10,8 @@ function buildApp(carrierStats: CarrierStatsRepository) {
 
 const fakeRepository: CarrierStatsRepository = {
   totalsByCarrier: async () => [
-    { carrier: 'estafeta', deliveries: 8, failures: 2, avgDays: 3 },
-    { carrier: 'dhl', deliveries: 10, failures: 0, avgDays: 2 },
+    { carrier: 'estafeta', deliveries: 8, failures: 2, cancelled: 0, avgDays: 3 },
+    { carrier: 'dhl', deliveries: 10, failures: 0, cancelled: 1, avgDays: 2 },
   ],
 }
 

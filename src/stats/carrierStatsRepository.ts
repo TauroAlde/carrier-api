@@ -11,6 +11,7 @@ type Row = {
   carrier: string
   deliveries: number
   failures: number
+  cancelled: number
   avg_days: string | null
 }
 
@@ -19,13 +20,27 @@ export function createCarrierStatsRepository(pool: Pool): CarrierStatsRepository
     async totalsByCarrier() {
       // One pass over the table: FILTER lets us compute several conditional
       // aggregates in the same GROUP BY instead of running one query per metric.
+      //
+      // A carrier "succeeds" when it delivers OR generates the label, and "fails"
+      // when it doesn't deliver OR can't generate the label: synced sandbox data
+      // only has label outcomes, sample data has delivery outcomes, and both
+      // measure the same thing, whether the carrier did its job.
+      // The API keeps the field names deliveries/failures so the dashboard's
+      // contract doesn't change.
+      //
+      // Days: real delivery time when there is one, otherwise the carrier's estimate.
       const { rows } = await pool.query<Row>(`
         SELECT
           carrier,
-          COUNT(*) FILTER (WHERE status = 'delivered')::int AS deliveries,
-          COUNT(*) FILTER (WHERE status = 'failed')::int    AS failures,
-          AVG(EXTRACT(EPOCH FROM (delivered_at - shipped_at)) / 86400)
-            FILTER (WHERE status = 'delivered')              AS avg_days
+          COUNT(*) FILTER (WHERE status IN ('delivered', 'label_created'))::int AS deliveries,
+          COUNT(*) FILTER (WHERE status IN ('failed', 'label_failed'))::int     AS failures,
+          COUNT(*) FILTER (WHERE status = 'cancelled')::int                     AS cancelled,
+          AVG(CASE
+                WHEN status = 'delivered'
+                  THEN EXTRACT(EPOCH FROM (delivered_at - shipped_at)) / 86400
+                WHEN status = 'label_created'
+                  THEN estimated_days
+              END)                                                              AS avg_days
         FROM shipments
         GROUP BY carrier
       `)
@@ -34,6 +49,7 @@ export function createCarrierStatsRepository(pool: Pool): CarrierStatsRepository
         carrier: row.carrier,
         deliveries: row.deliveries,
         failures: row.failures,
+        cancelled: row.cancelled,
         // pg returns NUMERIC as a string to avoid losing precision; days don't
         // need that precision, so converting to a JS number is safe here.
         avgDays: row.avg_days === null ? null : Number(row.avg_days),
